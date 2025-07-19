@@ -2,16 +2,24 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List
 import json
-from apscheduler.schedulers.background import BackgroundScheduler
+import os
+import time
+import threading
 import requests
 from bs4 import BeautifulSoup
+from dotenv import load_dotenv
 from telegram import Bot
+
+load_dotenv()
+bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+chat_id = os.getenv("TELEGRAM_CHAT_ID")
+bot = Bot(token=bot_token)
 
 app = FastAPI()
 
-# Carica ricerche salvate
+searches_file = "searches.json"
 try:
-    with open("searches.json", "r") as f:
+    with open(searches_file, "r") as f:
         searches = json.load(f)
 except FileNotFoundError:
     searches = []
@@ -24,11 +32,6 @@ class SearchItem(BaseModel):
     max_price: int
     distance: int
 
-bot_token = "6149326983:AAGVSMrGK6xOwf1NvNLNEwYue22tq7hoAhg"
-chat_id = 817120408  # Sostituisci col tuo
-
-bot = Bot(token=bot_token)
-
 @app.get("/searches")
 def get_searches():
     return searches
@@ -36,7 +39,7 @@ def get_searches():
 @app.post("/searches")
 def add_search(item: SearchItem):
     searches.append(item.dict())
-    with open("searches.json", "w") as f:
+    with open(searches_file, "w") as f:
         json.dump(searches, f)
     return {"message": "Search added"}
 
@@ -44,42 +47,46 @@ def add_search(item: SearchItem):
 def delete_search(index: int):
     if 0 <= index < len(searches):
         deleted = searches.pop(index)
-        with open("searches.json", "w") as f:
+        with open(searches_file, "w") as f:
             json.dump(searches, f)
         return {"deleted": deleted}
     raise HTTPException(status_code=404, detail="Search not found")
 
-def check_prices():
-    for item in searches:
-        location = item["location"]
-        checkin = item["checkin"]
-        checkout = item["checkout"]
-        guests = item["guests"]
-        max_price = item["max_price"]
-        distance = item["distance"]
+def check_booking_prices():
+    while True:
+        print("🔄 Controllo prezzi Booking...")
+        for i, search in enumerate(searches):
+            location = search["location"]
+            checkin = search["checkin"]
+            checkout = search["checkout"]
+            guests = search["guests"]
+            max_price = search["max_price"]
+            distance = search["distance"]
 
-        link = f"https://www.booking.com/searchresults.html?ss={location}&checkin_year_month_monthday={checkin}&checkout_year_month_monthday={checkout}&group_adults={guests}&no_rooms=1&group_children=0"
+            url = f"https://www.booking.com/searchresults.it.html?ss={location}&checkin_year_month_monthday={checkin}&checkout_year_month_monthday={checkout}&group_adults={guests}&selected_currency=EUR"
 
-        headers = {"User-Agent": "Mozilla/5.0"}
-        try:
-            response = requests.get(link, headers=headers)
-            soup = BeautifulSoup(response.text, "html.parser")
+            try:
+                response = requests.get(url)
+                soup = BeautifulSoup(response.text, "html.parser")
+                prices = soup.find_all("span", class_="fcab3ed991")
+                numeric_prices = []
+                for price_tag in prices:
+                    try:
+                        price = int(price_tag.get_text().replace("€", "").replace(".", "").strip())
+                        numeric_prices.append(price)
+                    except:
+                        pass
 
-            prices = soup.select(".fcab3ed991.bd73d13072")  # classe dei prezzi
-            if not prices:
-                continue
-            for price in prices:
-                try:
-                    price_int = int(price.text.replace("€", "").replace(",", "").strip())
-                    if price_int <= max_price:
-                        bot.send_message(chat_id=chat_id, text=f"Trovato alloggio a {location} per {price_int}€!\n{link}")
-                        break
-                except:
-                    continue
-        except:
-            continue
+                if numeric_prices:
+                    lowest_price = min(numeric_prices)
+                    print(f"📍 {location}: prezzo più basso trovato = {lowest_price} €")
+                    if lowest_price < max_price:
+                        message = f"🏠 {location}\nPrezzo trovato: {lowest_price} €\nPeriodo: {checkin} ➜ {checkout}"
+                        bot.send_message(chat_id=chat_id, text=message)
+            except Exception as e:
+                print(f"Errore durante il controllo per {location}: {e}")
 
-# Avvio del job ogni 60 minuti
-scheduler = BackgroundScheduler()
-scheduler.add_job(check_prices, "interval", minutes=2)
-scheduler.start()
+        time.sleep(120)  # ⏱️ Aspetta 2 minuti prima del prossimo check
+
+# Avvia il thread dello scraping in background
+threading.Thread(target=check_booking_prices, daemon=True).start()
