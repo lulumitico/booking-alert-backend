@@ -105,7 +105,7 @@ def check_prices():
 @app.on_event("startup")
 def start_scheduler():
     scheduler = BackgroundScheduler()
-    scheduler.add_job(check_prices, "interval", minutes=60)
+    scheduler.add_job(check_prices, "interval", minutes=2)
     scheduler.start()
 
         with open("searches.json", "w") as f:
