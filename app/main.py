@@ -6,14 +6,13 @@ import os
 import time
 import threading
 import requests
+import httpx
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from telegram import Bot
 
 load_dotenv()
 bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
 chat_id = os.getenv("TELEGRAM_CHAT_ID")
-bot = Bot(token=bot_token)
 
 app = FastAPI()
 
@@ -52,10 +51,18 @@ def delete_search(index: int):
         return {"deleted": deleted}
     raise HTTPException(status_code=404, detail="Search not found")
 
+def send_telegram_message(text: str):
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    payload = {"chat_id": chat_id, "text": text}
+    try:
+        httpx.post(url, data=payload)
+    except Exception as e:
+        print(f"Errore invio Telegram: {e}")
+
 def check_booking_prices():
     while True:
         print("🔄 Controllo prezzi Booking...")
-        for i, search in enumerate(searches):
+        for search in searches:
             location = search["location"]
             checkin = search["checkin"]
             checkout = search["checkout"]
@@ -70,6 +77,7 @@ def check_booking_prices():
                 soup = BeautifulSoup(response.text, "html.parser")
                 prices = soup.find_all("span", class_="fcab3ed991")
                 numeric_prices = []
+
                 for price_tag in prices:
                     try:
                         price = int(price_tag.get_text().replace("€", "").replace(".", "").strip())
@@ -82,7 +90,7 @@ def check_booking_prices():
                     print(f"📍 {location}: prezzo più basso trovato = {lowest_price} €")
                     if lowest_price < max_price:
                         message = f"🏠 {location}\nPrezzo trovato: {lowest_price} €\nPeriodo: {checkin} ➜ {checkout}"
-                        bot.send_message(chat_id=chat_id, text=message)
+                        send_telegram_message(message)
             except Exception as e:
                 print(f"Errore durante il controllo per {location}: {e}")
 
