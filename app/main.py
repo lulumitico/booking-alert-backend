@@ -88,9 +88,15 @@ def check_booking_prices():
                 if numeric_prices:
                     lowest_price = min(numeric_prices)
                     print(f"📍 {location}: prezzo più basso trovato = {lowest_price} €")
-                    if lowest_price < max_price:
-                        message = f"🏠 {location}\nPrezzo trovato: {lowest_price} €\nPeriodo: {checkin} ➜ {checkout}"
-                        send_telegram_message(message)
+                    
+                    # 🔧 Invia sempre il messaggio, anche se il prezzo è più alto
+                    message = (
+                        f"🏠 {location}\n"
+                        f"Prezzo trovato: {lowest_price} €\n"
+                        f"Periodo: {checkin} ➜ {checkout}\n"
+                        f"(Prezzo max impostato: {max_price} €)"
+                    )
+                    send_telegram_message(message)
             except Exception as e:
                 print(f"Errore durante il controllo per {location}: {e}")
 
