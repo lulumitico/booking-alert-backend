@@ -14,9 +14,6 @@ load_dotenv()
 bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
 chat_id = os.getenv("TELEGRAM_CHAT_ID")
 
-print("🔧 DEBUG - TOKEN:", bot_token)
-print("🔧 DEBUG - CHAT_ID:", chat_id)
-
 app = FastAPI()
 
 searches_file = "searches.json"
